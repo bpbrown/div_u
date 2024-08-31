@@ -30,8 +30,12 @@ logger = logging.getLogger(__name__)
 
 
 # Parameters
-Lx, Lz = 4, 1
-Nx, Nz = 256, 128
+aspect = 4
+Lz = 1
+Lx = Lz*aspect
+Nz = 128
+Nx = int(Nz*aspect)
+
 Rayleigh = 2e6
 Prandtl = 1
 dealias = 3/2
@@ -39,7 +43,7 @@ stop_sim_time = 50
 timestepper = d3.RK222
 max_timestep = 0.125
 dtype = np.float64
-case = 'ben_form_b_fluc_1e3_no_hermite'
+case = 'second'
 
 # Bases
 coords = d3.CartesianCoordinates('x', 'z')
@@ -75,14 +79,14 @@ lift1 = lambda A, n: d3.Lift(A, lift_basis1, n)
 V = Lx*Lz
 volavg = lambda A: d3.integ(A)/V
 
-tau_div = tau_c0 + lift1(tau_c1, -1)
+tau_d = tau_c0 + lift1(tau_c1, -1)
 tau_b = lift(tau_b1, -1) + lift(tau_b2, -2)
 tau_u = lift(tau_u1, -1) + lift(tau_u2, -2)
 
 # Problem
 vars = [p, b, u]
 problem = d3.IVP(vars + taus, namespace=locals())
-problem.add_equation("div(u) + tau_div = 0")
+problem.add_equation("div(u) + tau_d = 0")
 problem.add_equation("dt(b) - ez@u - kappa*lap(b) + tau_b = - u@grad(b)")
 problem.add_equation("dt(u) - nu*lap(u) + grad(p) - b*ez + tau_u = - u@grad(u)")
 problem.add_equation("b(z=0) = 0")
@@ -99,7 +103,6 @@ solver.stop_sim_time = stop_sim_time
 # Initial conditions
 b.fill_random('g', seed=42, distribution='normal', scale=1e-3) # Random noise
 b['g'] *= z * (Lz - z) # Damp noise at walls
-#b['g'] += Lz - z # Add linear background
 
 # Analysis
 snapshots = solver.evaluator.add_file_handler(case+'/snapshots', iter=100)
@@ -109,9 +112,10 @@ snapshots.add_task(d3.div(u), name='divergence')
 
 scalars = solver.evaluator.add_file_handler(case+'/scalars', iter=10)
 scalars.add_task(volavg(np.sqrt(u@u)/nu), name='Re')
-scalars.add_task(volavg(d3.div(u)), name='div_u')
-scalars.add_task(volavg(np.abs(d3.div(u))), name='|div_u|')
-
+scalars.add_task(np.sqrt(volavg(d3.div(u)**2)), name='|div_u|')
+scalars.add_task(np.sqrt(volavg(tau_d**2)), name='|tau_d|')
+scalars.add_task(np.sqrt(volavg(tau_u@tau_u)), name='|tau_u|')
+scalars.add_task(np.sqrt(volavg(tau_b**2)), name='|tau_b|')
 
 # CFL
 CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=10, safety=0.5, threshold=0.05,
@@ -122,6 +126,7 @@ CFL.add_velocity(u)
 flow = d3.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(np.sqrt(u@u)/nu, name='Re')
 flow.add_property(np.abs(d3.div(u)), name='|div_u|')
+flow.add_property(np.sqrt(tau_u@tau_u)+np.sqrt(tau_b**2)+np.sqrt(tau_d**2), name='|taus|')
 
 # Main loop
 startup_iter = 10
@@ -137,7 +142,8 @@ try:
         if (solver.iteration-1) % 10 == 0:
             max_Re = flow.max('Re')
             max_divu = flow.max('|div_u|')
-            logger.info(f'Iteration={solver.iteration:d}, Time={solver.sim_time:.2e}, dt={timestep:.2e}, max(Re)={max_Re:.2e}, divu={max_divu:.2e}')
+            max_taus = flow.max('|taus|')
+            logger.info(f'Iteration={solver.iteration:d}, Time={solver.sim_time:.2e}, dt={timestep:.2e}, max(Re)={max_Re:.2e}, divu={max_divu:.2e}, taus={max_taus:.2e}')
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
