@@ -92,7 +92,7 @@ tau_u = lift(tau_u1, -1) + lift(tau_u2, -2)
 vars = [p, b, u]
 problem = d3.IVP(vars + taus, namespace=locals())
 problem.add_equation("div(u) + tau_d = 0")
-problem.add_equation("dt(b) - kappa*lap(b) - ez@u + tau_b = - u@grad(b)")
+problem.add_equation("dt(b) - kappa*lap(b) - ez@u + tau_b = - (u@grad(b))")
 problem.add_equation("dt(u) - nu*lap(u) + grad(p) - b*ez + tau_u = cross(u, ω)")
 problem.add_equation("b(z=0) = 0")
 problem.add_equation("u(z=0) = 0")
